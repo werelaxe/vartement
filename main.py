@@ -3,8 +3,10 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 
+from utils import read_next_token
+
 VARIABLE_TEMPLATE = re.compile(r"[a-zA-Z][a-zA-Z0-9]*")
-NUMERIC_LITERAL_TEMPLATE = re.compile(r"\d+")
+NUMERIC_LITERAL_TEMPLATE = re.compile(r"-?\d+")
 
 
 class VariableType(Enum):
@@ -164,7 +166,10 @@ class Rvalue:
                 parsed_call = parse_call(variables, tokens)
                 if parsed_call.identifier == 'read':
                     self.type = RvalueType.NUMERIC_LITERAL
-                    self.value = NumericLiteral(int(input()))
+                    numeric_literal = read_next_token()
+                    if not NUMERIC_LITERAL_TEMPLATE.match(numeric_literal):
+                        raise TranslationError("Invalid input-numeric literal: {}".format(numeric_literal))
+                    self.value = NumericLiteral(numeric_literal)
                     self.variable_type = BUILT_IN_IDENTIFIERS[tokens[0]]
                 else:
                     self.type = RvalueType.CALL
