@@ -28,14 +28,14 @@ struct __list_ {};
 
 template <long long H, long long ...T>
 struct __list_<H, T...> {
-    static const long long Head = H;
-    using Tail = __list_<T...>;
-    static const size_t Length = 1 + sizeof...(T);
+    static const long long head = H;
+    using tail = __list_<T...>;
+    static const size_t length = 1 + sizeof...(T);
 };
 
 template <>
 struct __list_<> {
-    static const size_t Length = 0;
+    static const size_t length = 0;
 };
 
 template <long long ...T>
@@ -45,17 +45,17 @@ struct __list {
 
 template <typename LIST>
 struct __head {
-    static const long long value = LIST::Head;
+    static const long long value = LIST::head;
 };
 
 template <typename LIST>
 struct __tail {
-    using type = typename LIST::Tail;
+    using type = typename LIST::tail;
 };
 
 template <typename LIST>
 struct __size {
-    static const long long value = LIST::Length;
+    static const long long value = LIST::length;
 };
 
 template <long long H, typename TL>
@@ -118,7 +118,7 @@ struct __lieq< __list_<>, __list_<H, TAIL...>> {
 template <long long HA, long long ...TAILA, long long HB, long long ...TAILB>
 struct __lieq<__list_<HA, TAILA...>, __list_<HB, TAILB...>> {
     static const long long head_equals = HA == HB;
-    static const long long value = (__list_<TAILA...>::Length == __list_<TAILB...>::Length) ?
+    static const long long value = (__list_<TAILA...>::length == __list_<TAILB...>::length) ?
     (head_equals ? __lieq<__list_<TAILA...>, __list_<TAILB...>>::value : 0) : 0;
 };
 
