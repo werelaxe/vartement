@@ -34,6 +34,32 @@ BUILT_IN_IDENTIFIERS = {
     'mod': VariableType.NUMERIC,
     'read': VariableType.NUMERIC,
     'print': VariableType.NULL,
+    'list': VariableType.TYPE,
+    'head': VariableType.NUMERIC,
+    'tail': VariableType.TYPE,
+    'size': VariableType.NUMERIC,
+    'cons': VariableType.TYPE,
+    'append': VariableType.TYPE,
+    'concat': VariableType.TYPE,
+    'lieq': VariableType.NUMERIC,
+    'eq': VariableType.NUMERIC,
+    'neq': VariableType.NUMERIC,
+    'not': VariableType.NUMERIC,
+    'bnot': VariableType.NUMERIC,
+    'and': VariableType.NUMERIC,
+    'band': VariableType.NUMERIC,
+    'or': VariableType.NUMERIC,
+    'bor': VariableType.NUMERIC,
+    'xor': VariableType.NUMERIC,
+    'b': VariableType.NUMERIC,
+    'lshift': VariableType.NUMERIC,
+    'rshift': VariableType.NUMERIC,
+    'lt': VariableType.NUMERIC,
+    'leq': VariableType.NUMERIC,
+    'gt': VariableType.NUMERIC,
+    'geq': VariableType.NUMERIC,
+    'if': VariableType.NUMERIC,
+    'tif': VariableType.TYPE,
 }
 
 
@@ -70,6 +96,10 @@ class Variable:
             return 'null'
         else:
             return "{}_{}".format(self._name, self.count)
+
+
+def purify_name(name):
+    return name[:name.rfind('_')]
 
 
 class Assignment:
@@ -233,59 +263,59 @@ def parse(variables, raw_assignments):
     return assignments
 
 
-def translate_assignment(assignment: Assignment):
-    if assignment.right_op.type == RvalueType.NUMERIC_LITERAL:
-        return """struct {} {{{{
-    const static long long value = {};
-}}}};""".format(assignment.left_op, assignment.right_op.value.value)
-    elif assignment.right_op.type == RvalueType.VARIABLE_VALUE:
-        return """struct {} {{{{
-    const static long long value = {}::value;
-}}}};""".format(assignment.left_op, assignment.right_op.value.name)
-    elif assignment.right_op.type == RvalueType.CALL:
-        if assignment.right_op.variable_type == VariableType.NUMERIC:
-            return """struct {} {{{{
-                const static long long value = {}::value;
-            }}}};"""
-    else:
-        raise ParsingError("Unknown assignment rvalue type")
+# def translate_assignment(assignment: Assignment):
+#     if assignment.right_op.type == RvalueType.NUMERIC_LITERAL:
+#         return """struct {} {{{{
+#     const static long long value = {};
+# }}}};""".format(assignment.left_op, assignment.right_op.value.value)
+#     elif assignment.right_op.type == RvalueType.VARIABLE_VALUE:
+#         return """struct {} {{{{
+#     const static long long value = {}::value;
+# }}}};""".format(assignment.left_op, assignment.right_op.value.name)
+#     elif assignment.right_op.type == RvalueType.CALL:
+#         if assignment.right_op.variable_type == VariableType.NUMERIC:
+#             return """struct {} {{{{
+#                 const static long long value = {}::value;
+#             }}}};"""
+#     else:
+#         raise ParsingError("Unknown assignment rvalue type")
 
 
 def translate_left_op(assignment: Assignment):
     if assignment.right_op.variable_type == VariableType.NUMERIC:
         return """struct {} {{{{
     const static long long value = {{}};
-}}}};""".format(assignment.left_op)
+}}}};\n""".format(assignment.left_op)
     elif assignment.right_op.variable_type == VariableType.TYPE:
         return """struct {} {{{{
-    using type = {{}}
-}}}};""".format(assignment.left_op)
+    using type = {{}};
+}}}};\n""".format(assignment.left_op)
     else:
         raise TranslationError("Unknown assignment rvalue type or trying assign null to a variable")
 
 
-def translate_right_op(right_op):
+def translate_right_op(variables, right_op):
     if right_op.type == RvalueType.NUMERIC_LITERAL:
         return str(right_op.value.value)
     elif right_op.type == RvalueType.VARIABLE_VALUE:
-        return "{}::value".format(right_op.value.name)
+        return "{}::{}".format(right_op.value.name, variables[purify_name(right_op.value.name)].type)
     elif right_op.type == RvalueType.CALL:
         identifier = right_op.value.identifier
         translated_args = []
         for arg in right_op.value.arguments:
-            translated_args.append(translate_right_op(arg))
+            translated_args.append(translate_right_op(variables, arg))
         return "__{}<{}>::{}".format(identifier, ', '.join(translated_args), str(BUILT_IN_IDENTIFIERS[identifier]))
     else:
         raise ParsingError("Unknown rvalue type")
 
 
-def translate_print_func(right_op):
+def translate_print_func(variables, right_op):
     if right_op.type != RvalueType.CALL:
         raise TranslationError("Can not translate print as non-call")
     # cout << arg1 << " " << arg2 << " " << arg3 << endl;
     args = []
     for arg in right_op.value.arguments:
-        args.append(translate_right_op(arg))
+        args.append(translate_right_op(variables, arg))
     return '    cout << ' + ' << " " << '.join(args) + ' << endl;'
 
 
@@ -309,10 +339,10 @@ def build_vta_code(variables, assignments):
             identifier = assignment.right_op.value.identifier
             if identifier not in NULL_TRANSLATION_FUNCS:
                 raise TranslationError("Can not translate non-null function '{}'".format(identifier))
-            main_func_code.append(NULL_TRANSLATION_FUNCS[identifier](assignment.right_op))
+            main_func_code.append(NULL_TRANSLATION_FUNCS[identifier](variables, assignment.right_op))
         else:
             left_op = translate_left_op(assignment)
-            right_op = translate_right_op(assignment.right_op)
+            right_op = translate_right_op(variables, assignment.right_op)
             body_code.append(left_op.format(right_op))
 
     with open("main_func.cpp") as main_func_file:

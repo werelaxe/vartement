@@ -1,1 +1,1 @@
-null = print(add(read(), read()))
+null = print(if(eq(read(), read()), read(), read()))
