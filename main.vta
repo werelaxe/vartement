@@ -1,4 +1,3 @@
-x = 2
-inc = num() -> x
-null = print(inc())
+f = num(x: num) -> if(eq(x, 1), 1, f(sub(x, 1)))
+null = print(f(5))
 

@@ -306,24 +306,35 @@ def get_tokens(source):
     return result
 
 
+def preparse_func_literals(raw_pairs):
+    functional_literals = {}
+    for raw_line_pair in raw_pairs:
+        if '->' in raw_line_pair[1]:
+            if raw_line_pair[1].startswith("num"):
+                functional_literals[raw_line_pair[0]] = VariableType.NUMERIC
+            elif raw_line_pair[1].startswith("type"):
+                functional_literals[raw_line_pair[0]] = VariableType.TYPE
+            else:
+                raise ParsingError("Functional literal must starts with 'type' or 'num'")
+    return functional_literals
+
+
 LinePair = namedtuple("LinePair", ["is_func_literal", "object"])
 
 
-def parse_vta_code(variables, raw_pairs):
+def parse_vta_code(variables, functional_literals, raw_pairs):
     line_pairs = []
-    functional_literals = {}
-    for raw_assignment in raw_pairs:
-        if '->' in raw_assignment[1]:
-            func_lit = FunctionalLiteral(*raw_assignment, functional_literals, variables)
-            functional_literals[func_lit.name] = func_lit.func_lit_type
+    for raw_line_pair in raw_pairs:
+        if '->' in raw_line_pair[1]:
+            func_lit = FunctionalLiteral(*raw_line_pair, functional_literals, variables)
             line_pairs.append(LinePair(True, func_lit))
             continue
-        rvalue = Rvalue(variables, raw_assignment[1], functional_literals, {})
-        variables[raw_assignment[0]].inc()
-        lvalue_full_name = variables[raw_assignment[0]].name
-        variables[raw_assignment[0]].type = rvalue.variable_type
+        rvalue = Rvalue(variables, raw_line_pair[1], functional_literals, {})
+        variables[raw_line_pair[0]].inc()
+        lvalue_full_name = variables[raw_line_pair[0]].name
+        variables[raw_line_pair[0]].type = rvalue.variable_type
         line_pairs.append(LinePair(False, Assignment(lvalue_full_name, rvalue)))
-    return line_pairs, functional_literals
+    return line_pairs
 
 
 def translate_left_op(assignment: Assignment):
@@ -352,7 +363,11 @@ def translate_right_op(variables, functional_literals, right_op):
         if identifier in BUILT_IN_IDENTIFIERS:
             return "__{}<{}>::{}".format(identifier, ', '.join(translated_args), str(BUILT_IN_IDENTIFIERS[identifier]))
         elif identifier in functional_literals:
-            return "_{}::{}".format(identifier, str(functional_literals[identifier]))
+            if translated_args:
+                return "_{}<{}>::{}".format(identifier, ', '.join(translated_args),
+                                            str(functional_literals[identifier]))
+            else:
+                return "_{}::{}".format(identifier, str(functional_literals[identifier]))
         else:
             raise TranslationError(
                 "Identifier '{}' is not contains in built-in-identifires or declared functional literals".format(
@@ -431,7 +446,8 @@ def main():
         variables = {}
         for var_name in get_variables(raw_line_pairs):
             variables[var_name] = Variable(var_name, VariableType.NOT_SET)
-        line_pairs, functional_literals = parse_vta_code(variables, raw_line_pairs)
+        functional_literals = preparse_func_literals(raw_line_pairs)
+        line_pairs = parse_vta_code(variables, functional_literals, raw_line_pairs)
         vta_code = build_cpp_code(variables, line_pairs, functional_literals)
         with open("program.cpp", "w") as program_file:
             program_file.write(vta_code)
