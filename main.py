@@ -1,5 +1,5 @@
-import logging
 import re
+from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
 
@@ -24,6 +24,18 @@ class VariableType(Enum):
             return ""
         else:
             raise TranslationError("Can not translate not setted variable type")
+
+
+TEMPLATE_ARG_TYPES = {
+    VariableType.TYPE: "typename",
+    VariableType.NUMERIC: "long long",
+}
+
+
+def translate_template_arg_type(arg_type: VariableType):
+    if arg_type not in TEMPLATE_ARG_TYPES:
+        raise TranslationError("Can not translate arg type '{}' into template parameter".format(arg_type))
+    return TEMPLATE_ARG_TYPES[arg_type]
 
 
 BUILT_IN_IDENTIFIERS = {
@@ -51,7 +63,7 @@ BUILT_IN_IDENTIFIERS = {
     'or': VariableType.NUMERIC,
     'bor': VariableType.NUMERIC,
     'xor': VariableType.NUMERIC,
-    'b': VariableType.NUMERIC,
+    'bool': VariableType.NUMERIC,
     'lshift': VariableType.NUMERIC,
     'rshift': VariableType.NUMERIC,
     'lt': VariableType.NUMERIC,
@@ -137,17 +149,57 @@ class Call:
     arguments: list
 
 
-@dataclass
+class FuncLitType(Enum):
+    NUMERIC = 0
+    TYPE = 1
+
+
+FUNC_LIT_TYPES_STR = {
+    "num": VariableType.NUMERIC,
+    "type": VariableType.TYPE,
+}
+
+
+def get_func_lit_type(arg):
+    if arg not in FUNC_LIT_TYPES_STR:
+        raise ParsingError("Unknown function literal type: '{}'".format(arg))
+    return FUNC_LIT_TYPES_STR[arg]
+
+
 class FunctionalLiteral:
-    pass
+    def __init__(self, name, raw_expr, functional_literals, variables):
+        self.name = name
+        self.raw_expr = raw_expr
+        tokens = get_tokens(raw_expr)
+        self.func_lit_type = get_func_lit_type(tokens[0])
+        if tokens[1] != "(":
+            raise ParsingError("Bad function literal syntax. '(' expected after literal type")
+        if ")" not in tokens:
+            raise ParsingError("Bad function literal syntax. ')' expected somewhere")
+        args = {}
+        for i in range(2, len(tokens)):
+            if tokens[i] == ")":
+                break
+            elif tokens[i] == ":":
+                arg_name = tokens[i - 1]
+                arg_type = get_func_lit_type(tokens[i + 1])
+                args[arg_name] = arg_type
+        self.args = args
+        rvalue_start_index = tokens.index('>')
+        rvalue_tokens = tokens[rvalue_start_index + 1:]
+        self.rvalue = Rvalue(variables, ''.join(rvalue_tokens), functional_literals, args)
+
+    def __str__(self):
+        return "FunctionalLiteral(name={}, args={}, rvalue={})".format(self.name, self.args, self.rvalue)
 
 
 @dataclass
 class LocalVariable:
     name: str
+    type: VariableType
 
 
-def parse_call(variables, tokens):
+def parse_call(variables, tokens, functional_literals, local_vars):
     if tokens[-1] != ")":
         raise ParsingError("Call must have ')' at the end")
     if tokens[1:] == ['(', ')']:
@@ -162,24 +214,21 @@ def parse_call(variables, tokens):
         elif token == ')':
             deep -= 1
         elif token == ',' and deep == 1:
-            args.append(Rvalue(variables, ''.join(tokens[last_index:i])))
+            args.append(Rvalue(variables, ''.join(tokens[last_index:i]), functional_literals, local_vars))
             last_index = i + 1
-    args.append(Rvalue(variables, ''.join(tokens[last_index:-1])))
+    args.append(Rvalue(variables, ''.join(tokens[last_index:-1]), functional_literals, local_vars))
     return Call(tokens[0], args)
 
 
-def parse_func_literal(variables, tokens):
-    pass
-
-
 class Rvalue:
-    def __init__(self, variables, raw_rvalue, local_vars=None):
+    def __init__(self, variables, raw_rvalue, functional_literals, local_vars):
         self.raw_rvalue = raw_rvalue
         if local_vars is not None:
             if raw_rvalue in local_vars:
-                self.value = LocalVariable(raw_rvalue)
+                self.value = LocalVariable(raw_rvalue, local_vars[raw_rvalue])
                 self.type = RvalueType.LOCAL_VARIABLE
                 self.variable_type = local_vars[raw_rvalue]
+                return
         if NUMERIC_LITERAL_TEMPLATE.match(raw_rvalue):
             self.value = NumericLiteral(int(raw_rvalue))
             self.type = RvalueType.NUMERIC_LITERAL
@@ -192,8 +241,13 @@ class Rvalue:
             tokens = get_tokens(raw_rvalue)
             if len(tokens) < 2:
                 raise ParsingError("Unknown rvalue type: '{}'".format(raw_rvalue))
-            if tokens[0] in BUILT_IN_IDENTIFIERS and tokens[1] == "(":
-                parsed_call = parse_call(variables, tokens)
+            if tokens[0] in functional_literals and tokens[1] == "(":
+                parsed_call = parse_call(variables, tokens, functional_literals, local_vars)
+                self.type = RvalueType.CALL
+                self.value = parsed_call
+                self.variable_type = functional_literals[tokens[0]]
+            elif tokens[0] in BUILT_IN_IDENTIFIERS and tokens[1] == "(":
+                parsed_call = parse_call(variables, tokens, functional_literals, local_vars)
                 if parsed_call.identifier == 'read':
                     self.type = RvalueType.NUMERIC_LITERAL
                     numeric_literal = read_next_token()
@@ -216,10 +270,10 @@ def get_variables(assignments):
     return set(map(lambda x: x[0], assignments))
 
 
-def get_assignments(source):
+def get_line_pairs(source):
     assignments = []
     for line in source:
-        if not line.strip():
+        if not line.strip() or line.strip().startswith('#'):
             continue
         eql_cnt = line.count('=')
         if eql_cnt != 1:
@@ -252,33 +306,24 @@ def get_tokens(source):
     return result
 
 
-def parse(variables, raw_assignments):
-    assignments = []
-    for raw_assignment in raw_assignments:
-        rvalue = Rvalue(variables, raw_assignment[1])
+LinePair = namedtuple("LinePair", ["is_func_literal", "object"])
+
+
+def parse_vta_code(variables, raw_pairs):
+    line_pairs = []
+    functional_literals = {}
+    for raw_assignment in raw_pairs:
+        if '->' in raw_assignment[1]:
+            func_lit = FunctionalLiteral(*raw_assignment, functional_literals, variables)
+            functional_literals[func_lit.name] = func_lit.func_lit_type
+            line_pairs.append(LinePair(True, func_lit))
+            continue
+        rvalue = Rvalue(variables, raw_assignment[1], functional_literals, {})
         variables[raw_assignment[0]].inc()
         lvalue_full_name = variables[raw_assignment[0]].name
         variables[raw_assignment[0]].type = rvalue.variable_type
-        assignments.append(Assignment(lvalue_full_name, rvalue))
-    return assignments
-
-
-# def translate_assignment(assignment: Assignment):
-#     if assignment.right_op.type == RvalueType.NUMERIC_LITERAL:
-#         return """struct {} {{{{
-#     const static long long value = {};
-# }}}};""".format(assignment.left_op, assignment.right_op.value.value)
-#     elif assignment.right_op.type == RvalueType.VARIABLE_VALUE:
-#         return """struct {} {{{{
-#     const static long long value = {}::value;
-# }}}};""".format(assignment.left_op, assignment.right_op.value.name)
-#     elif assignment.right_op.type == RvalueType.CALL:
-#         if assignment.right_op.variable_type == VariableType.NUMERIC:
-#             return """struct {} {{{{
-#                 const static long long value = {}::value;
-#             }}}};"""
-#     else:
-#         raise ParsingError("Unknown assignment rvalue type")
+        line_pairs.append(LinePair(False, Assignment(lvalue_full_name, rvalue)))
+    return line_pairs, functional_literals
 
 
 def translate_left_op(assignment: Assignment):
@@ -294,7 +339,7 @@ def translate_left_op(assignment: Assignment):
         raise TranslationError("Unknown assignment rvalue type or trying assign null to a variable")
 
 
-def translate_right_op(variables, right_op):
+def translate_right_op(variables, functional_literals, right_op):
     if right_op.type == RvalueType.NUMERIC_LITERAL:
         return str(right_op.value.value)
     elif right_op.type == RvalueType.VARIABLE_VALUE:
@@ -303,19 +348,30 @@ def translate_right_op(variables, right_op):
         identifier = right_op.value.identifier
         translated_args = []
         for arg in right_op.value.arguments:
-            translated_args.append(translate_right_op(variables, arg))
-        return "__{}<{}>::{}".format(identifier, ', '.join(translated_args), str(BUILT_IN_IDENTIFIERS[identifier]))
+            translated_args.append(translate_right_op(variables, functional_literals, arg))
+        if identifier in BUILT_IN_IDENTIFIERS:
+            return "__{}<{}>::{}".format(identifier, ', '.join(translated_args), str(BUILT_IN_IDENTIFIERS[identifier]))
+        elif identifier in functional_literals:
+            return "_{}::{}".format(identifier, str(functional_literals[identifier]))
+        else:
+            raise TranslationError(
+                "Identifier '{}' is not contains in built-in-identifires or declared functional literals".format(
+                    identifier
+                )
+            )
+
+    elif right_op.type == RvalueType.LOCAL_VARIABLE:
+        return right_op.raw_rvalue
     else:
-        raise ParsingError("Unknown rvalue type")
+        raise ParsingError("Unknown rvalue type: '{}'".format(right_op))
 
 
-def translate_print_func(variables, right_op):
+def translate_print_func(variables, functional_literals, right_op):
     if right_op.type != RvalueType.CALL:
         raise TranslationError("Can not translate print as non-call")
-    # cout << arg1 << " " << arg2 << " " << arg3 << endl;
     args = []
     for arg in right_op.value.arguments:
-        args.append(translate_right_op(variables, arg))
+        args.append(translate_right_op(variables, functional_literals, arg))
     return '    cout << ' + ' << " " << '.join(args) + ' << endl;'
 
 
@@ -324,7 +380,22 @@ NULL_TRANSLATION_FUNCS = {
 }
 
 
-def build_vta_code(variables, assignments):
+def translate_functional_literal(variables, functional_literals, func_lit: FunctionalLiteral):
+    pars = ", ".join(["{} {}".format(translate_template_arg_type(type), name) for name, type in func_lit.args.items()])
+    result = ["template<{}>".format(pars)] if pars else []
+    if func_lit.func_lit_type == VariableType.NUMERIC:
+        result.append("""struct _{} {{
+    const static long long value = {};
+}};""".format(func_lit.name, translate_right_op(variables, functional_literals, func_lit.rvalue)))
+    else:
+        typename = "typename " if func_lit.rvalue.type == RvalueType.CALL else ""
+        result.append("""struct _{} {{
+    using type = {}{};
+}};""".format(func_lit.name, typename, translate_right_op(variables, functional_literals, func_lit.rvalue)))
+    return '\n'.join(result)
+
+
+def build_cpp_code(variables, line_pairs, functional_literals):
     body_code = []
     main_func_code = []
 
@@ -334,15 +405,17 @@ def build_vta_code(variables, assignments):
     with open("vta_stdlib.cpp") as vta_stdlib_file:
         body_code.append(vta_stdlib_file.read())
 
-    for assignment in assignments:
-        if assignment.left_op == 'null':
-            identifier = assignment.right_op.value.identifier
+    for is_func_literal, atomic_obj in line_pairs:
+        if is_func_literal:
+            body_code.append(translate_functional_literal(variables, functional_literals, atomic_obj))
+        elif atomic_obj.left_op == 'null':
+            identifier = atomic_obj.right_op.value.identifier
             if identifier not in NULL_TRANSLATION_FUNCS:
                 raise TranslationError("Can not translate non-null function '{}'".format(identifier))
-            main_func_code.append(NULL_TRANSLATION_FUNCS[identifier](variables, assignment.right_op))
+            main_func_code.append(NULL_TRANSLATION_FUNCS[identifier](variables, functional_literals, atomic_obj.right_op))
         else:
-            left_op = translate_left_op(assignment)
-            right_op = translate_right_op(variables, assignment.right_op)
+            left_op = translate_left_op(atomic_obj)
+            right_op = translate_right_op(variables, functional_literals, atomic_obj.right_op)
             body_code.append(left_op.format(right_op))
 
     with open("main_func.cpp") as main_func_file:
@@ -354,12 +427,12 @@ def build_vta_code(variables, assignments):
 
 def main():
     with open("main.vta") as source:
-        raw_assignments = get_assignments(source)
+        raw_line_pairs = get_line_pairs(source)
         variables = {}
-        for var_name in get_variables(raw_assignments):
+        for var_name in get_variables(raw_line_pairs):
             variables[var_name] = Variable(var_name, VariableType.NOT_SET)
-        assignments = parse(variables, raw_assignments)
-        vta_code = build_vta_code(variables, assignments)
+        line_pairs, functional_literals = parse_vta_code(variables, raw_line_pairs)
+        vta_code = build_cpp_code(variables, line_pairs, functional_literals)
         with open("program.cpp", "w") as program_file:
             program_file.write(vta_code)
 

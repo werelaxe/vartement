@@ -168,7 +168,7 @@ struct __xor {
 };
 
 template <long long A>
-struct __b {
+struct __bool {
     static const long long value = !!A;
 };
 

@@ -1,1 +1,4 @@
-null = print(if(eq(read(), read()), read(), read()))
+x = 2
+inc = num() -> x
+null = print(inc())
+
