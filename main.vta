@@ -1,3 +1,8 @@
-f = num(x: num) -> if(eq(x, 1), 1, f(sub(x, 1)))
-null = print(f(5))
+func = type(x: num) -> list(x)
+func(0) = list(1, 2, 3)
 
+a = func(1)
+b = func(0)
+
+null = print(size(a))
+null = print(size(b))
