@@ -53,6 +53,7 @@ BUILT_IN_IDENTIFIERS = {
     'cons': VariableType.TYPE,
     'append': VariableType.TYPE,
     'concat': VariableType.TYPE,
+    'count': VariableType.NUMERIC,
     'lieq': VariableType.NUMERIC,
     'eq': VariableType.NUMERIC,
     'neq': VariableType.NUMERIC,
@@ -443,24 +444,45 @@ def translate_left_op(assignment: Assignment):
         raise TranslationError("Unknown assignment rvalue type or trying assign null to a variable")
 
 
-def translate_right_op(variables, functional_literals, right_op):
+def has_type_parameter(arguments):
+    for argument in arguments:
+        if argument.type == RvalueType.LOCAL_VARIABLE and argument.value.type == VariableType.TYPE:
+            return True
+    return False
+
+
+def translate_right_op(variables, functional_literals, right_op, force_type_suffix=False):
     if right_op.type == RvalueType.NUMERIC_LITERAL:
         return str(right_op.value.value)
     elif right_op.type == RvalueType.VARIABLE_VALUE:
         return "{}::{}".format(right_op.value.name, variables[purify_name(right_op.value.name)].type)
     elif right_op.type == RvalueType.CALL:
         identifier = right_op.value.identifier
+        arguments = right_op.value.arguments
         translated_args = []
-        for arg in right_op.value.arguments:
+        for arg in arguments:
             translated_args.append(translate_right_op(variables, functional_literals, arg))
         if identifier in BUILT_IN_IDENTIFIERS:
-            return "__{}<{}>::{}".format(identifier, ', '.join(translated_args), str(BUILT_IN_IDENTIFIERS[identifier]))
-        elif identifier in functional_literals:
-            if translated_args:
-                return "_{}<{}>::{}".format(identifier, ', '.join(translated_args),
-                                            str(functional_literals[identifier]))
+            result_type = BUILT_IN_IDENTIFIERS[identifier]
+            if has_type_parameter(arguments) and not force_type_suffix and result_type == VariableType.TYPE:
+                suffix = "::type"
+                prefix = "typename "
             else:
-                return "_{}::{}".format(identifier, str(functional_literals[identifier]))
+                suffix = "::" + str(result_type)
+                prefix = ""
+            return "{}__{}<{}>{}".format(prefix, identifier, ', '.join(translated_args), suffix)
+        elif identifier in functional_literals:
+            result_type = functional_literals[identifier]
+            if has_type_parameter(arguments) and not force_type_suffix and result_type == VariableType.TYPE:
+                suffix = "::type"
+                prefix = "typename "
+            else:
+                suffix = "::" + str(result_type)
+                prefix = ""
+            if translated_args:
+                return "{}_{}<{}>{}".format(prefix, identifier, ', '.join(translated_args), suffix)
+            else:
+                return "{}_{}{}".format(prefix, identifier, suffix)
         else:
             raise TranslationError(
                 "Identifier '{}' is not contains in built-in-identifires or declared functional literals".format(
@@ -494,12 +516,12 @@ def translate_functional_literal(variables, functional_literals, func_lit: Funct
     if func_lit.func_lit_type == VariableType.NUMERIC:
         result.append("""struct _{} {{
     const static long long value = {};
-}};\n""".format(func_lit.name, translate_right_op(variables, functional_literals, func_lit.rvalue)))
+}};\n""".format(func_lit.name, translate_right_op(variables, functional_literals, func_lit.rvalue, True)))
     else:
         typename = "typename " if func_lit.rvalue.type == RvalueType.CALL else ""
         result.append("""struct _{} {{
     using type = {}{};
-}};\n""".format(func_lit.name, typename, translate_right_op(variables, functional_literals, func_lit.rvalue)))
+}};\n""".format(func_lit.name, typename, translate_right_op(variables, functional_literals, func_lit.rvalue, True)))
     return '\n'.join(result)
 
 
@@ -522,10 +544,11 @@ struct _{}<{}> {{
     const static long long value = {};
 }};\n""".format(tplt_args, func_lit_spec.name, translated_pars, translated_rvalue)
     else:
+        typename = "typename " if func_lit_spec.rvalue.type == RvalueType.CALL else ""
         return """template<{}>
 struct _{}<{}> {{
-    using type = {};
-}};\n""".format(tplt_args, func_lit_spec.name, translated_pars, translated_rvalue)
+    using type = {}{};
+}};\n""".format(tplt_args, func_lit_spec.name, translated_pars, typename, translated_rvalue)
 
 
 def build_cpp_code(variables, code_lines, functional_literals):
@@ -549,7 +572,7 @@ def build_cpp_code(variables, code_lines, functional_literals):
                 main_func_code.append(NULL_TRANSLATION_FUNCS[identifier](variables, functional_literals, atomic_obj.right_op))
             else:
                 left_op = translate_left_op(atomic_obj)
-                right_op = translate_right_op(variables, functional_literals, atomic_obj.right_op)
+                right_op = translate_right_op(variables, functional_literals, atomic_obj.right_op, False)
                 body_code.append(left_op.format(right_op))
         elif line_type == LineType.FUNC_LIT_SPECIALIZATION:
             body_code.append(translate_func_lit_spec(variables, functional_literals, atomic_obj))
