@@ -23,8 +23,7 @@ class VariableType(Enum):
         elif self == VariableType.NULL:
             return ""
         else:
-            return "-1!!!!!!!!!!!!!!!!!"
-            # raise TranslationError("Can not translate not setted variable type")
+            raise TranslationError("Can not translate not setted variable type")
 
 
 TEMPLATE_ARG_TYPES = {
@@ -200,11 +199,14 @@ class LocalVariable:
     type: VariableType
 
 
-def parse_call(variables, tokens, functional_literals, local_vars):
+def get_call_args(tokens):
+    if tokens[1] != "(":
+        raise ParsingError("Call must have '(' after the call name")
     if tokens[-1] != ")":
         raise ParsingError("Call must have ')' at the end")
     if tokens[1:] == ['(', ')']:
-        return Call(tokens[0], [])
+        return []
+        # return Call(tokens[0], [])
     last_index = 2
     deep = 0
     args = []
@@ -215,9 +217,20 @@ def parse_call(variables, tokens, functional_literals, local_vars):
         elif token == ')':
             deep -= 1
         elif token == ',' and deep == 1:
-            args.append(Rvalue(variables, ''.join(tokens[last_index:i]), functional_literals, local_vars))
+            # args.append(Rvalue(variables, ''.join(tokens[last_index:i]), functional_literals, local_vars))
+            args.append(tokens[last_index:i])
             last_index = i + 1
-    args.append(Rvalue(variables, ''.join(tokens[last_index:-1]), functional_literals, local_vars))
+    # args.append(Rvalue(variables, ''.join(tokens[last_index:-1]), functional_literals, local_vars))
+    args.append(tokens[last_index:-1])
+    # return Call(tokens[0], args)
+    return args
+
+
+def parse_call(variables, tokens, functional_literals, local_vars):
+    args = []
+    for call_arg in get_call_args(tokens):
+        rvalue = Rvalue(variables, ''.join(call_arg), functional_literals, local_vars)
+        args.append(rvalue)
     return Call(tokens[0], args)
 
 
@@ -295,8 +308,9 @@ def is_same_type(c1: str, c2: str):
         return True
     elif c1.isalpha() and c2.isalpha():
         return True
-    else:
-        return False
+    elif c1.isnumeric() and c2.isnumeric():
+        return True
+    return False
 
 
 def get_tokens(source):
@@ -324,6 +338,26 @@ def preparse_func_literals(raw_pairs):
     return functional_literals
 
 
+class FuncLitSpecArgType(Enum):
+    RVALUE = 0
+    FREE_VARIABLE = 1
+
+
+class FuncLitSpecArg:
+    def __init__(self, value, type):
+        self.value = value
+        self.type = type
+
+    def __str__(self):
+        return "FuncLitSpecArg(value={}, type={})".format(self.value, self.type)
+
+
+@dataclass
+class FreeVariable:
+    name: str
+    variable_type: VariableType
+
+
 class FunctionalLiteralSpecialization:
     def __init__(self, variables, func_lit_types, related_func_lit: FunctionalLiteral, raw_left, raw_right):
         self.related_func_lit = related_func_lit
@@ -332,11 +366,17 @@ class FunctionalLiteralSpecialization:
         self.local_vars = {}
         tokens = get_tokens(raw_left)
         parameters = []
-        for token in tokens[2:-1]:
-            if token != ",":
-                parameters.append(token)
-            if VARIABLE_TEMPLATE.match(token):
-                self.local_vars[token] = related_func_lit.args[token]
+        for call_arg in get_call_args(tokens):
+            call_arg = ''.join(call_arg)
+            if call_arg in related_func_lit.args:
+                variable_type = related_func_lit.args[call_arg]
+                free_variable = FreeVariable(call_arg, variable_type)
+                parameters.append(FuncLitSpecArg(free_variable, FuncLitSpecArgType.FREE_VARIABLE))
+                self.local_vars[call_arg] = variable_type
+            else:
+                rvalue = Rvalue(variables, call_arg, func_lit_types, self.local_vars)
+                parameters.append(FuncLitSpecArg(rvalue, FuncLitSpecArgType.RVALUE))
+
         self.parameters = parameters
         self.rvalue = Rvalue(variables, raw_right, func_lit_types, self.local_vars)
         self.name = get_func_lit_spec_name(raw_left)
@@ -454,12 +494,12 @@ def translate_functional_literal(variables, functional_literals, func_lit: Funct
     if func_lit.func_lit_type == VariableType.NUMERIC:
         result.append("""struct _{} {{
     const static long long value = {};
-}};""".format(func_lit.name, translate_right_op(variables, functional_literals, func_lit.rvalue)))
+}};\n""".format(func_lit.name, translate_right_op(variables, functional_literals, func_lit.rvalue)))
     else:
         typename = "typename " if func_lit.rvalue.type == RvalueType.CALL else ""
         result.append("""struct _{} {{
     using type = {}{};
-}};""".format(func_lit.name, typename, translate_right_op(variables, functional_literals, func_lit.rvalue)))
+}};\n""".format(func_lit.name, typename, translate_right_op(variables, functional_literals, func_lit.rvalue)))
     return '\n'.join(result)
 
 
@@ -467,18 +507,25 @@ def translate_func_lit_spec(variables, func_lit_types, func_lit_spec: Functional
     tplt_args = ', '.join(
         "{} {}".format(translate_template_arg_type(type), name) for name, type in func_lit_spec.local_vars.items()
     )
-    translated_pars = ', '.join(func_lit_spec.parameters)
+    parameters = []
+    for parameter in func_lit_spec.parameters:
+        if parameter.type == FuncLitSpecArgType.FREE_VARIABLE:
+            parameters.append(parameter.value.name)
+        else:
+            parameters.append(translate_right_op(variables, func_lit_types, parameter.value))
+
+    translated_pars = ', '.join(parameters)
     translated_rvalue = translate_right_op(variables, func_lit_types, func_lit_spec.rvalue)
     if func_lit_spec.rvalue.variable_type == VariableType.NUMERIC:
         return """template<{}>
 struct _{}<{}> {{
     const static long long value = {};
-}};""".format(tplt_args, func_lit_spec.name, translated_pars, translated_rvalue)
+}};\n""".format(tplt_args, func_lit_spec.name, translated_pars, translated_rvalue)
     else:
         return """template<{}>
 struct _{}<{}> {{
     using type = {};
-}};""".format(tplt_args, func_lit_spec.name, translated_pars, translated_rvalue)
+}};\n""".format(tplt_args, func_lit_spec.name, translated_pars, translated_rvalue)
 
 
 def build_cpp_code(variables, code_lines, functional_literals):
