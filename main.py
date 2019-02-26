@@ -39,6 +39,7 @@ def translate_template_arg_type(arg_type: VariableType):
 
 
 BUILT_IN_IDENTIFIERS = {
+    'nan': VariableType.NUMERIC,
     'add': VariableType.NUMERIC,
     'sub': VariableType.NUMERIC,
     'mul': VariableType.NUMERIC,
@@ -53,7 +54,6 @@ BUILT_IN_IDENTIFIERS = {
     'cons': VariableType.TYPE,
     'append': VariableType.TYPE,
     'concat': VariableType.TYPE,
-    'count': VariableType.NUMERIC,
     'lieq': VariableType.NUMERIC,
     'eq': VariableType.NUMERIC,
     'neq': VariableType.NUMERIC,
@@ -73,6 +73,9 @@ BUILT_IN_IDENTIFIERS = {
     'geq': VariableType.NUMERIC,
     'if': VariableType.NUMERIC,
     'tif': VariableType.TYPE,
+    'count': VariableType.NUMERIC,
+    'contains': VariableType.NUMERIC,
+    'get': VariableType.NUMERIC,
 }
 
 
@@ -177,6 +180,11 @@ class FunctionalLiteral:
             raise ParsingError("Bad function literal syntax. '(' expected after literal type")
         if ")" not in tokens:
             raise ParsingError("Bad function literal syntax. ')' expected somewhere")
+
+        # signature_end = tokens.index('-')
+        # call_args = get_call_args(tokens[:signature_end])
+        #
+        # print(call_args)
         args = {}
         for i in range(2, len(tokens)):
             if tokens[i] == ")":
@@ -470,7 +478,10 @@ def translate_right_op(variables, functional_literals, right_op, force_type_suff
             else:
                 suffix = "::" + str(result_type)
                 prefix = ""
-            return "{}__{}<{}>{}".format(prefix, identifier, ', '.join(translated_args), suffix)
+            if translated_args:
+                return "{}__{}<{}>{}".format(prefix, identifier, ', '.join(translated_args), suffix)
+            else:
+                return "{}__{}{}".format(prefix, identifier, suffix)
         elif identifier in functional_literals:
             result_type = functional_literals[identifier]
             if has_type_parameter(arguments) and not force_type_suffix and result_type == VariableType.TYPE:

@@ -1,3 +1,7 @@
+struct __nan {
+    const static unsigned long long value = -9223372036854775807;
+};
+
 template<long long A, long long B>
 struct __add {
     const static long long value = A + B;
@@ -215,4 +219,54 @@ struct __tif {
 template <typename A, typename B>
 struct __tif<0, A, B> {
     using type = B;
+};
+
+template<typename lst, long long x, long long acc>
+struct __count_ {
+    const static long long value =
+        __if<
+            __eq<__head<lst>::value, x>::value,
+            __count_<typename __tail<lst>::type, x, __add<acc, 1>::value>::value,
+            __count_<typename __tail<lst>::type, x, acc
+        >::value>::value;
+};
+
+template<long long x, long long acc>
+struct __count_<__list<>::type, x, acc> {
+    const static long long value = acc;
+};
+
+template<typename lst, long long x>
+struct __count {
+    const static long long value = __count_<lst, x, 0>::value;
+};
+
+template<typename lst, long long x>
+struct __contains {
+    const static long long value = __if<__eq<__head<lst>::value, x>::value, 1, __contains<typename __tail<lst>::type, x>::value>::value;
+};
+
+template<long long x>
+struct __contains<__list<>::type, x> {
+    const static long long value = 0;
+};
+
+template<long long x, long long y>
+struct __max {
+    const static long long value = x > y ? x : y;
+};
+
+template<long long x, long long y>
+struct __min {
+    const static long long value = x > y ? y : x;
+};
+
+template<typename lst, long long i>
+struct __get {
+    const static long long value = __if<i, __get<typename __tail<lst>::type, __sub<i, 1>::value>::value, __head<lst>::value>::value;
+};
+
+template<typename lst>
+struct __get<lst, -1> {
+    const static long long value = __nan::value;
 };
