@@ -1,3 +1,6 @@
+/* handwritten stdlib */
+
+template <long long ...T>
 struct __nan {
     const static unsigned long long value = -9223372036854775807;
 };
@@ -221,6 +224,9 @@ struct __tif<0, A, B> {
     using type = B;
 };
 
+
+/* generated stdlib */
+
 template<typename lst, long long x, long long acc>
 struct __count_ {
     const static long long value =
@@ -268,5 +274,26 @@ struct __get {
 
 template<typename lst>
 struct __get<lst, -1> {
-    const static long long value = __nan::value;
+    const static long long value = __nan<>::value;
+};
+
+template<typename lst>
+void __print() {
+    cout << lst::head << " ";
+    __print<typename lst::tail>();
+}
+
+template<>
+void __print<__list_<>>() {
+    cout << endl;
+}
+
+template<typename lst, template<long long x> typename func>
+struct __map {
+    using type = typename __cons<func<__head<lst>::value>::value, typename __map<typename __tail<lst>::type, func>::type>::type;
+};
+
+template<template<long long x> typename func>
+struct __map<typename __list<>::type, func> {
+    using type = typename __list<>::type;
 };
