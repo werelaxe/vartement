@@ -1,11 +1,12 @@
 import os
+from collections import namedtuple
+from enum import Enum
 from subprocess import check_output
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, Future
 from random import randint
 from time import sleep
 
-from lang.translate import translate
-
+from lang.translate import translate, ParsingError, TranslationError
 
 TASKS_PATH = "tasks"
 
@@ -15,23 +16,43 @@ def execute_task(task_id, task_source, stdin):
     cpp_filename = bin_filename + ".cpp"
     with open(cpp_filename, "w") as file:
         file.write(translate(task_source, stdin))
-    print(check_output(["g++", cpp_filename, "-o", bin_filename]))
-    print(check_output([bin_filename]))
-    return "Yes!"
+    check_output(["g++", cpp_filename, "-o", bin_filename])
+    return check_output([bin_filename]).decode()
+
+
+class TaskStatus(Enum):
+    RUNNING = 0
+    DONE = 1
+    ERROR = 2
+
+
+TaskInfo = namedtuple("TaskInfo", ["status", "stdout", "error"])
 
 
 class VtaExecutor:
     def __init__(self):
         self._executor = ProcessPoolExecutor(max_workers=256)
         self.tasks = {}
+        self.task_count = 0
 
     def execute_task(self, task_source, stdin):
-        task_id = str(randint(10 ** 4, 10 ** 5 - 1))
+        task_id = str(self.task_count)
+        self.task_count += 1
         self.tasks[task_id] = self._executor.submit(execute_task, task_id, task_source, stdin)
         # execute_task(task_id, task_source, stdin)
         return task_id
 
-    def get_task_status(self, task_id):
-        print(self.tasks[task_id])
-        print(dir(self.tasks[task_id]))
-        return "No!"
+    def task_info(self, task_id):
+        if self.tasks[task_id].running():
+            return TaskInfo(TaskStatus.RUNNING, "", "")
+        elif self.tasks[task_id].done():
+            try:
+                print(TaskStatus.DONE, self.tasks[task_id].result(0), "")
+                result = TaskInfo(TaskStatus.DONE, self.tasks[task_id].result(0), "")
+                return result
+            except (ParsingError, TranslationError) as e:
+                print(e)
+                print(type(e))
+                print(str(e))
+                return TaskInfo(TaskStatus.ERROR, "", str(e))
+        raise Exception("Kek?")

@@ -4,7 +4,7 @@ import json
 from bottle import route, run, request, post, get, static_file, redirect, abort, response, jinja2_view as view
 import redis
 
-from executor import VtaExecutor
+from executor import VtaExecutor, TaskStatus
 
 r = redis.StrictRedis(host='localhost', port=6379, db=0)
 vta_executor = VtaExecutor()
@@ -23,16 +23,27 @@ def run_task():
     token = data.get('token')
     if token != "my_token":
         abort(403)
-    task_id = vta_executor.execute_task(source, io.StringIO("123\n"))
-
+    task_id = vta_executor.execute_task(source, io.StringIO(stdin + "\n"))
     return json.dumps({"task_id": task_id})
 
 
 @get("/info/<task_id>")
 def info(task_id):
-    # data = json.loads(request.body.read().decode())
-    # task_id = data.get('task_id')
-    vta_executor.get_task_status(task_id)
+    info = vta_executor.task_info(task_id)
+    if info.status == TaskStatus.DONE:
+        return json.dumps({
+            "task_status": "done",
+            "stdout": info.stdout,
+        })
+    elif info.status == TaskStatus.RUNNING:
+        return json.dumps({
+            "task_status": "running",
+        })
+    else:
+        return json.dumps({
+            "task_status": "error",
+            "error": info.error,
+        })
 
 
 def main():
