@@ -288,6 +288,11 @@ void __print<__list_<>>() {
     cout << endl;
 }
 
+template<long long x>
+void __print() {
+    cout << x << endl;
+}
+
 template<typename lst, template<long long x> typename func>
 struct __map {
     using type = typename __cons<func<__head<lst>::value>::value, typename __map<typename __tail<lst>::type, func>::type>::type;
