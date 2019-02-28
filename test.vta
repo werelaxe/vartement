@@ -1,0 +1,38 @@
+# test 1
+a = 1
+null = print(a)
+
+# test 2
+b = a
+null = print(b)
+
+# test 3
+f = num(x: num) -> add(mul(x, x), a)
+null = print(eq(f(12), 145))
+
+last = 10
+l = list(5, 3, 9, 6, 2, 5, 4, 2, 11, last)
+
+# test 4
+null = print(lieq(l, cons(head(l), tail(l))))
+
+# test 5
+null = print(eq(get(l, sub(size(l), 1)), last))
+
+# test 6
+fltr = type(pred: num(x: num), lst: type) -> tif(pred(head(lst)), cons(head(lst), fltr(pred, tail(lst))), fltr(pred, tail(lst)))
+fltr(pred, list()) = list()
+p = num(x: num) -> mod(x, 2)
+filteredl = fltr(p, l)
+null = print(lieq(filteredl, list(5, 3, 9, 5, 11)))
+
+# test 7
+fof = num(a: num, b: num) -> add(mul(a, 2), mul(b, b))
+sof = num(fof: num(a: num, b: num), a: num, b: num) -> fof(fof(a, a), fof(b, b))
+tof = num(sof: num(fof: num(a: num, b: num), a: num, b: num), fof: num(a: num, b: num), a: num, b: num) -> sof(fof, mul(a, b), add(a, b))
+null = print(eq(tof(sof, fof, 2, 5), 4209))
+
+# test 8
+asof = num(afof: num(x: num, y: num), x: num, y: num) -> afof(mul(x, y), add(x, y))
+tof(asof, fof, 1, b) = pow(2, b)
+null = print(eq(tof(asof, fof, 1, 13), 8192))

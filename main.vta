@@ -1,4 +1,0 @@
-f = num(x: num, lst: type, y: num) -> add(add(x, size(lst)), y)
-f(12, list(1, 2), y) = 57
-
-null = print(f(12, list(1, 2), 12))
