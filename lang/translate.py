@@ -3,6 +3,7 @@ import re
 from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
+from time import sleep
 
 from lang.utils import read_next_token
 
@@ -198,7 +199,7 @@ def get_func_lit_type(args):
 
 
 class FunctionalLiteral:
-    def __init__(self, name, raw_expr, functional_literals, variables):
+    def __init__(self, name, raw_expr, functional_literals, variables, stdin):
         self.name = name
         self.raw_expr = raw_expr
         tokens = get_tokens(raw_expr)
@@ -343,12 +344,16 @@ def get_variables(assignments):
 
 def get_code_lines(source):
     assignments = []
-    for line in source.split('\n'):
+    splitted_source = source.split('\n')
+    for i in range(len(splitted_source)):
+        line = splitted_source[i]
         if not line.strip() or line.strip().startswith('#'):
             continue
         eql_cnt = line.count('=')
         if eql_cnt != 1:
-            raise ParsingError("Every line must contain exactly one assignment ({})".format(eql_cnt))
+            raise ParsingError(
+                "Every line must contain exactly one assignment, non-empty line {}\n({})".format(i, line)
+            )
         left_op, right_op = line.split('=')
         left_op = left_op.strip()
         right_op = right_op.strip()
@@ -412,7 +417,7 @@ class FreeVariable:
 
 
 class FunctionalLiteralSpecialization:
-    def __init__(self, variables, func_lit_types, related_func_lit: FunctionalLiteral, raw_left, raw_right):
+    def __init__(self, variables, func_lit_types, related_func_lit: FunctionalLiteral, raw_left, raw_right, stdin):
         self.related_func_lit = related_func_lit
         self.raw_left = raw_left
         self.raw_right = raw_right
@@ -462,24 +467,30 @@ def get_func_lit_spec_name(raw_value):
 def parse_vta_code(variables, func_lit_types, raw_code_lines, stdin):
     code_lines = []
     functional_literals = {}
-    for raw_code_line in raw_code_lines:
-        if '->' in raw_code_line[1]:
-            func_lit = FunctionalLiteral(*raw_code_line, func_lit_types, variables)
-            functional_literals[func_lit.name] = func_lit
-            code_lines.append(CodeLine(LineType.FUNC_LIT, func_lit))
-        elif '(' in raw_code_line[0] and ')' in raw_code_line[0]:
-            func_lit_spec_name = get_func_lit_spec_name(raw_code_line[0])
-            if func_lit_spec_name not in functional_literals:
-                raise ParsingError("No such functional literal with name '{}'".format(func_lit_spec_name))
-            functional_literal = functional_literals[func_lit_spec_name]
-            func_lit_spec = FunctionalLiteralSpecialization(variables, func_lit_types, functional_literal, *raw_code_line)
-            code_lines.append(CodeLine(LineType.FUNC_LIT_SPECIALIZATION, func_lit_spec))
-        else:
-            rvalue = Rvalue(variables, raw_code_line[1], func_lit_types, {}, stdin)
-            variables[raw_code_line[0]].inc()
-            lvalue_full_name = variables[raw_code_line[0]].name
-            variables[raw_code_line[0]].type = rvalue.variable_type
-            code_lines.append(CodeLine(LineType.ASSIGNMENT, Assignment(lvalue_full_name, rvalue)))
+    for i in range(len(raw_code_lines)):
+        raw_code_line = raw_code_lines[i]
+        try:
+            if '->' in raw_code_line[1]:
+                func_lit = FunctionalLiteral(*raw_code_line, func_lit_types, variables, stdin)
+                functional_literals[func_lit.name] = func_lit
+                code_lines.append(CodeLine(LineType.FUNC_LIT, func_lit))
+            elif '(' in raw_code_line[0] and ')' in raw_code_line[0]:
+                func_lit_spec_name = get_func_lit_spec_name(raw_code_line[0])
+                if func_lit_spec_name not in functional_literals:
+                    raise ParsingError("No such functional literal with name '{}'".format(func_lit_spec_name))
+                functional_literal = functional_literals[func_lit_spec_name]
+                func_lit_spec = FunctionalLiteralSpecialization(
+                    variables, func_lit_types, functional_literal, *raw_code_line, stdin
+                )
+                code_lines.append(CodeLine(LineType.FUNC_LIT_SPECIALIZATION, func_lit_spec))
+            else:
+                rvalue = Rvalue(variables, raw_code_line[1], func_lit_types, {}, stdin)
+                variables[raw_code_line[0]].inc()
+                lvalue_full_name = variables[raw_code_line[0]].name
+                variables[raw_code_line[0]].type = rvalue.variable_type
+                code_lines.append(CodeLine(LineType.ASSIGNMENT, Assignment(lvalue_full_name, rvalue)))
+        except ParsingError as e:
+            raise ParsingError(str(e) + " non-empty line: {}\n({})".format(i, ' = '.join(raw_code_line)))
     return code_lines
 
 
@@ -648,7 +659,9 @@ def build_cpp_code(variables, code_lines, functional_literals):
                 identifier = atomic_obj.right_op.value.identifier
                 if identifier not in NULL_TRANSLATION_FUNCS:
                     raise TranslationError("Can not translate non-null function '{}'".format(identifier))
-                main_func_code.append(NULL_TRANSLATION_FUNCS[identifier](variables, functional_literals, atomic_obj.right_op))
+                main_func_code.append(NULL_TRANSLATION_FUNCS[identifier](
+                    variables, functional_literals, atomic_obj.right_op
+                ))
             else:
                 left_op = translate_left_op(atomic_obj)
                 right_op = translate_right_op(variables, functional_literals, atomic_obj.right_op)
@@ -673,3 +686,7 @@ def translate(source, stdin):
     functional_literals = preparse_func_literals(raw_code_lines)
     code_lines = parse_vta_code(variables, functional_literals, raw_code_lines, stdin)
     return build_cpp_code(variables, code_lines, functional_literals)
+#
+#
+# with open("test.vta") as file:
+#     translate(file.read(), "")
