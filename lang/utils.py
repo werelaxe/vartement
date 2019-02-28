@@ -1,12 +1,12 @@
 import sys
 
 
-def read_next_token():
+def read_next_token(stdin):
     c = ' '
     while c.isspace():
-        c = sys.stdin.read(1)
+        c = stdin.read(1)
     res = []
     while not c.isspace():
         res.append(c)
-        c = sys.stdin.read(1)
+        c = stdin.read(1)
     return ''.join(res).strip()

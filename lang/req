@@ -1,0 +1,6 @@
+{
+    "source": "null = print(add(read(), 1))",
+    "stdin": "123",
+    "token": "my_token"
+}
+
