@@ -1,0 +1,6 @@
+{
+    "source": "nf = num(x: num) -> add(mul(x, x), a)\nnull = print(eq(f(12), 145))\n\nlast = 10\nl = list(5, 3, 9, 6, 2, 5, 4, 2, 11, last)\n\n# test 4\nnull = print(lieq(l, cons(head(l), tail(l))))\n\n# test 5\nnull = print(eq(get(l, sub(size(l), 1)), last))\n\n# test 6\nfltr = type(pred: num(x: num), lst: type) -> tif(pred(head(lst)), cons(head(lst), fltr(pred, tail(lst))), fltr(pred, tail(lst)))\nfltr(pred, list()) = list()\np = num(x: num) -> mod(x, 2)\nfilteredl = fltr(p, l)\nnull = print(lieq(filteredl, list(5, 3, 9, 5, 11)))\n\n# test 7\nfof = num(a: num, b: num) -> add(mul(a, 2), mul(b, b))\nsof = num(fof: num(a: num, b: num), a: num, b: num) -> fof(fof(a, a), fof(b, b))\ntof = num(sof: num(fof: num(a: num, b: num), a: num, b: num), fof: num(a: num, b: num), a: num, b: num) -> sof(fof, mul(a, b), add(a, b))\nnull = print(eq(tof(sof, fof, 2, 5), 4209))\n\n# test 8\nasof = num(afof: num(x: num, y: num), x: num, y: num) -> afof(mul(x, y), add(x, y))\ntof(asof, fof, 1, b) = pow(2, b)\nnull = print(eq(tof(asof, fof, 1, 13), 8192))",
+    "stdin": "",
+    "token": "my_token"
+}
+
