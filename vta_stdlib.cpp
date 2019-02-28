@@ -302,3 +302,13 @@ template<template<long long x> typename func>
 struct __map<typename __list<>::type, func> {
     using type = typename __list<>::type;
 };
+
+template<long long x, long long n>
+struct __pow {
+    const static long long value = __mul<x, __pow<x, __sub<n, 1>::value>::value>::value;
+};
+
+template<long long x>
+struct __pow<x, 0> {
+    const static long long value = 1;
+};
