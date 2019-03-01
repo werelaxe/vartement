@@ -3,12 +3,13 @@ import re
 from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
+from random import randint, random, choice
 from time import sleep
 
 from lang.utils import read_next_token
 
 VARIABLE_TEMPLATE = re.compile(r"[a-zA-Z][a-zA-Z0-9]*")
-NUMERIC_LITERAL_TEMPLATE = re.compile(r"-?\d+")
+NUMERIC_LITERAL_TEMPLATE = re.compile(r"^-?\d+$")
 
 
 
@@ -485,6 +486,8 @@ def parse_vta_code(variables, func_lit_types, raw_code_lines, stdin):
                 code_lines.append(CodeLine(LineType.FUNC_LIT_SPECIALIZATION, func_lit_spec))
             else:
                 rvalue = Rvalue(variables, raw_code_line[1], func_lit_types, {}, stdin)
+                if raw_code_line[0] not in variables:
+                    raise ParsingError("Can not find variable '{}'".format(raw_code_line[0]))
                 variables[raw_code_line[0]].inc()
                 lvalue_full_name = variables[raw_code_line[0]].name
                 variables[raw_code_line[0]].type = rvalue.variable_type
@@ -686,7 +689,3 @@ def translate(source, stdin):
     functional_literals = preparse_func_literals(raw_code_lines)
     code_lines = parse_vta_code(variables, functional_literals, raw_code_lines, stdin)
     return build_cpp_code(variables, code_lines, functional_literals)
-#
-#
-# with open("test.vta") as file:
-#     translate(file.read(), "")
