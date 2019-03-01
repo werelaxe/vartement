@@ -1,0 +1,6 @@
+{
+    "source": "null = print(2)\nnull = print(3)",
+    "stdin": "",
+    "token": "my_token"
+}
+

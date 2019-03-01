@@ -21,14 +21,20 @@ def run_task():
     source = data.get('source')
     stdin = data.get('stdin')
     token = data.get('token')
-    if token != "my_token":
-        abort(403)
+
     task_id = vta_executor.execute_task(source, io.StringIO(stdin + "\n"))
+    r.set(task_id, token)
+
     return json.dumps({"task_id": task_id})
 
 
 @get("/info/<task_id>")
 def info(task_id):
+    expected_token = r.get(task_id).decode()
+    real_token = request.GET.get("token")
+    if expected_token != real_token:
+        abort(403)
+
     info = vta_executor.task_info(task_id)
     if info.status == TaskStatus.DONE:
         return json.dumps({
