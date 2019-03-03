@@ -584,7 +584,10 @@ def translate_print_func(variables, functional_literals, right_op):
     args = []
     for arg in right_op.value.arguments:
         args.append(translate_right_op(variables, functional_literals, arg))
-    return '    __print<' + ', '.join(args) + '>();'
+    if right_op.value.arguments[0].variable_type == VariableType.TYPE:
+        return '    __print<' + ', '.join(args) + '>();'
+    else:
+        return '    cout << ' + ', '.join(args) + '<< endl;'
 
 
 NULL_TRANSLATION_FUNCS = {
