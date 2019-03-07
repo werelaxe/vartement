@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from enum import Enum
 from random import randint, random, choice
 from time import sleep
-
-from lang.utils import read_next_token
+import sys
+from utils import read_next_token
 
 VARIABLE_TEMPLATE = re.compile(r"[a-zA-Z][a-zA-Z0-9]*")
 NUMERIC_LITERAL_TEMPLATE = re.compile(r"^-?\d+$")
@@ -651,10 +651,10 @@ def build_cpp_code(variables, code_lines, functional_literals):
     body_code = []
     main_func_code = []
 
-    with open("lang/vta_header.cpp") as vta_header_file:
+    with open("vta_header.cpp") as vta_header_file:
         body_code.append(vta_header_file.read())
 
-    with open("lang/vta_stdlib.cpp") as vta_stdlib_file:
+    with open("vta_stdlib.cpp") as vta_stdlib_file:
         body_code.append(vta_stdlib_file.read())
 
     for line_type, atomic_obj in code_lines:
@@ -677,7 +677,7 @@ def build_cpp_code(variables, code_lines, functional_literals):
         else:
             raise TranslationError("Unknown line_type: '{}'".format(line_type))
 
-    with open("lang/main_func.cpp") as main_func_file:
+    with open("main_func.cpp") as main_func_file:
         main_func_template = main_func_file.read()
         body_code.append(main_func_template.format('\n'.join(main_func_code)))
 
@@ -692,3 +692,13 @@ def translate(source, stdin):
     functional_literals = preparse_func_literals(raw_code_lines)
     code_lines = parse_vta_code(variables, functional_literals, raw_code_lines, stdin)
     return build_cpp_code(variables, code_lines, functional_literals)
+
+
+def main():
+    with open(sys.argv[1]) as file:
+        print(translate(file.read(), ""))
+
+
+if __name__ == '__main__':
+    main()
+
