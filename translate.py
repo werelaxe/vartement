@@ -695,6 +695,9 @@ def translate(source, stdin):
 
 
 def main():
+    if len(sys.argv) <= 1:
+        print("Input .vta file is required as first cmd argument.")
+        return
     with open(sys.argv[1]) as file:
         print(translate(file.read(), ""))
 
