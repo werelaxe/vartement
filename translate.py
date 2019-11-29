@@ -1,16 +1,12 @@
-import io
 import re
 from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
-from random import randint, random, choice
-from time import sleep
 import sys
 from utils import read_next_token
 
 VARIABLE_TEMPLATE = re.compile(r"[a-zA-Z][a-zA-Z0-9]*")
 NUMERIC_LITERAL_TEMPLATE = re.compile(r"^-?\d+$")
-
 
 
 class VariableTypeEnum(Enum):
